@@ -1,10 +1,11 @@
 import streamlit as st
 import speech_recognition as sr
+import sounddevice as sd
+import soundfile as sf
 import tempfile
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from gtts import gTTS
 from io import BytesIO
-import os
 
 # Configuración de la página
 st.set_page_config(
@@ -14,7 +15,7 @@ st.set_page_config(
 )
 
 st.title("🎤 Traductor de voz Español → Francés")
-st.markdown("Sube un audio en español (.wav o .mp3) y lo traduciremos a francés con voz.")
+st.markdown("Graba o sube un audio en español (.wav o .mp3) y lo traduciremos a francés con voz.")
 
 # Cargar modelo de traducción
 @st.cache_resource
@@ -44,6 +45,21 @@ def transcribir_audio(archivo_audio):
         st.error(f"❌ Error al procesar el audio: {e}")
     return None
 
+# Grabación con micrófono
+def grabar_desde_microfono(duracion=5):
+    st.info(f"🎙️ Grabando durante {duracion} segundos...")
+    fs = 16000
+    try:
+        audio = sd.rec(int(duracion * fs), samplerate=fs, channels=1)
+        sd.wait()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmpfile:
+            sf.write(tmpfile.name, audio, fs)
+            with open(tmpfile.name, "rb") as f:
+                return f.read()
+    except Exception as e:
+        st.error(f"❌ Error al grabar: {str(e)}")
+        return None
+
 # Traducción español → francés
 def traducir_texto(texto_espanol):
     if not texto_espanol:
@@ -66,31 +82,43 @@ def texto_a_voz_frances(texto_fr):
         buffer.seek(0)
         return buffer
     except Exception as e:
-        st.error(f"❌ Error al generar audio: {e}")
+        st.error(f"❌ Error al generar audio: {str(e)}")
         return None
 
 # Interfaz principal
 def main():
-    archivo_subido = st.file_uploader("🔊 Sube un archivo de audio en español", type=["wav", "mp3"])
+    st.markdown("### 🟢 Elige una opción:")
+    metodo = st.radio("Entrada de audio:", ["🎙️ Grabar con micrófono", "📁 Subir archivo .wav/.mp3"])
 
-    if archivo_subido is not None:
-        with st.spinner("🎧 Transcribiendo..."):
-            texto_es = transcribir_audio(archivo_subido)
+    if metodo == "🎙️ Grabar con micrófono":
+        if st.button("🎤 Grabar 5 segundos"):
+            audio_bytes = grabar_desde_microfono()
+            if audio_bytes:
+                st.audio(audio_bytes, format="audio/wav")
+                texto_es = transcribir_audio(BytesIO(audio_bytes))
+            else:
+                texto_es = None
 
-        if texto_es:
-            st.success(f"📝 Texto reconocido: {texto_es}")
+    else:
+        archivo = st.file_uploader("Sube un archivo de audio", type=["wav", "mp3"])
+        if archivo:
+            st.audio(archivo)
+            texto_es = transcribir_audio(archivo)
+        else:
+            texto_es = None
 
-            with st.spinner("🌐 Traduciendo al francés..."):
-                texto_fr = traducir_texto(texto_es)
+    if texto_es:
+        st.success(f"📝 Texto reconocido: {texto_es}")
+        with st.spinner("🌐 Traduciendo..."):
+            texto_fr = traducir_texto(texto_es)
 
-            if texto_fr:
-                st.success(f"📘 Traducción: {texto_fr}")
+        if texto_fr:
+            st.success(f"📘 Traducción: {texto_fr}")
+            buffer = texto_a_voz_frances(texto_fr)
+            if buffer:
+                st.audio(buffer, format="audio/mp3")
 
-                buffer = texto_a_voz_frances(texto_fr)
-                if buffer:
+                if st.button("🔁 Repetir audio"):
                     st.audio(buffer, format="audio/mp3")
-
-                    if st.button("🔁 Repetir audio"):
-                        st.audio(buffer, format="audio/mp3")
 
 main()
