@@ -15,9 +15,9 @@ st.set_page_config(
 )
 
 st.title("🎤 Traductor de voz Español → Francés")
-st.markdown("Graba o sube un audio en español (.wav o .mp3) y lo traduciremos a francés con voz.")
+st.markdown("Puedes **grabar tu voz** o **subir un archivo de audio** en español, y el sistema lo traducirá al francés con voz.")
 
-# Cargar modelo de traducción
+# Cargar modelo
 @st.cache_resource
 def cargar_modelo():
     model_name = "Helsinki-NLP/opus-mt-es-fr"
@@ -25,56 +25,59 @@ def cargar_modelo():
     model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
     return tokenizer, model
 
-# Transcripción de audio a texto (español)
-def transcribir_audio(archivo_audio):
-    recognizer = sr.Recognizer()
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-            tmp.write(archivo_audio.read())
-            tmp_path = tmp.name
-
-        with sr.AudioFile(tmp_path) as source:
-            audio_data = recognizer.record(source)
-            texto = recognizer.recognize_google(audio_data, language="es-ES")
-            return texto
-    except sr.UnknownValueError:
-        st.warning("⚠️ No se pudo entender el audio.")
-    except sr.RequestError as e:
-        st.error(f"❌ Error de conexión con el servicio de reconocimiento de voz: {e}")
-    except Exception as e:
-        st.error(f"❌ Error al procesar el audio: {e}")
-    return None
-
-# Grabación con micrófono
-def grabar_desde_microfono(duracion=5):
-    st.info(f"🎙️ Grabando durante {duracion} segundos...")
-    fs = 16000
+# Captura desde micrófono
+def capturar_audio(duracion=5):
+    st.info(f"🎙️ Escuchando durante {duracion} segundos...")
+    fs = 16000  # Frecuencia de muestreo
     try:
         audio = sd.rec(int(duracion * fs), samplerate=fs, channels=1)
         sd.wait()
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmpfile:
             sf.write(tmpfile.name, audio, fs)
-            with open(tmpfile.name, "rb") as f:
-                return f.read()
+            r = sr.Recognizer()
+            with sr.AudioFile(tmpfile.name) as source:
+                audio_data = r.record(source)
+                texto = r.recognize_google(audio_data, language="es-ES")
+                return texto
+    except sr.UnknownValueError:
+        st.warning("⚠️ No se pudo entender el audio.")
+    except sr.RequestError as e:
+        st.error(f"❌ Error con el servicio de reconocimiento de voz: {e}")
     except Exception as e:
-        st.error(f"❌ Error al grabar: {str(e)}")
-        return None
+        st.error(f"❌ Error al capturar el audio: {e}")
+    return None
 
-# Traducción español → francés
-def traducir_texto(texto_espanol):
-    if not texto_espanol:
-        return None
+# Transcripción desde archivo subido
+def transcribir_audio_subido(archivo_audio):
+    recognizer = sr.Recognizer()
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+            tmp.write(archivo_audio.read())
+            with sr.AudioFile(tmp.name) as source:
+                audio_data = recognizer.record(source)
+                texto = recognizer.recognize_google(audio_data, language="es-ES")
+                return texto
+    except sr.UnknownValueError:
+        st.warning("⚠️ No se pudo entender el audio.")
+    except sr.RequestError as e:
+        st.error(f"❌ Error de conexión: {e}")
+    except Exception as e:
+        st.error(f"❌ Error al procesar el archivo: {e}")
+    return None
+
+# Traducción
+def traducir_texto(texto):
     try:
         tokenizer, model = cargar_modelo()
-        inputs = tokenizer(texto_espanol, return_tensors="pt", truncation=True)
-        outputs = model.generate(**inputs)
-        return tokenizer.decode(outputs[0], skip_special_tokens=True)
+        inputs = tokenizer(texto, return_tensors="pt", truncation=True)
+        output = model.generate(**inputs)
+        return tokenizer.decode(output[0], skip_special_tokens=True)
     except Exception as e:
-        st.error(f"❌ Error al traducir: {e}")
+        st.error(f"❌ Error al traducir: {str(e)}")
         return None
 
-# Conversión de texto a voz (francés)
-def texto_a_voz_frances(texto_fr):
+# Texto a voz en francés
+def texto_a_voz(texto_fr):
     try:
         tts = gTTS(text=texto_fr, lang="fr")
         buffer = BytesIO()
@@ -82,43 +85,37 @@ def texto_a_voz_frances(texto_fr):
         buffer.seek(0)
         return buffer
     except Exception as e:
-        st.error(f"❌ Error al generar audio: {str(e)}")
+        st.error(f"❌ Error al generar el audio: {str(e)}")
         return None
 
 # Interfaz principal
 def main():
-    st.markdown("### 🟢 Elige una opción:")
-    metodo = st.radio("Entrada de audio:", ["🎙️ Grabar con micrófono", "📁 Subir archivo .wav/.mp3"])
+    metodo = st.radio("Selecciona el método de entrada:", ["🎙️ Grabar desde micrófono", "📁 Subir archivo de audio (.wav o .mp3)"])
 
-    if metodo == "🎙️ Grabar con micrófono":
-        if st.button("🎤 Grabar 5 segundos"):
-            audio_bytes = grabar_desde_microfono()
-            if audio_bytes:
-                st.audio(audio_bytes, format="audio/wav")
-                texto_es = transcribir_audio(BytesIO(audio_bytes))
-            else:
-                texto_es = None
+    texto_es = None
 
-    else:
-        archivo = st.file_uploader("Sube un archivo de audio", type=["wav", "mp3"])
-        if archivo:
+    if metodo == "🎙️ Grabar desde micrófono":
+        if st.button("🎤 Grabar ahora"):
+            texto_es = capturar_audio()
+
+    elif metodo == "📁 Subir archivo de audio (.wav o .mp3)":
+        archivo = st.file_uploader("Sube tu archivo de audio", type=["wav", "mp3"])
+        if archivo is not None:
             st.audio(archivo)
-            texto_es = transcribir_audio(archivo)
-        else:
-            texto_es = None
+            texto_es = transcribir_audio_subido(archivo)
 
     if texto_es:
         st.success(f"📝 Texto reconocido: {texto_es}")
-        with st.spinner("🌐 Traduciendo..."):
+
+        with st.spinner("🌐 Traduciendo al francés..."):
             texto_fr = traducir_texto(texto_es)
 
         if texto_fr:
             st.success(f"📘 Traducción: {texto_fr}")
-            buffer = texto_a_voz_frances(texto_fr)
-            if buffer:
-                st.audio(buffer, format="audio/mp3")
-
+            audio = texto_a_voz(texto_fr)
+            if audio:
+                st.audio(audio, format="audio/mp3")
                 if st.button("🔁 Repetir audio"):
-                    st.audio(buffer, format="audio/mp3")
+                    st.audio(audio, format="audio/mp3")
 
 main()
