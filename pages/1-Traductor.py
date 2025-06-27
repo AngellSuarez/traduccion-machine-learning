@@ -30,7 +30,7 @@ def capturar_audio(duracion=5):
             r = sr.Recognizer()
             with sr.AudioFile(tmpfile.name) as source:
                 audio_data = r.record(source)
-                texto = r.recognize_google(audio_data, laguage="es-ES")
+                texto = r.recognize_google(audio_data, language="es-ES")
                 return texto
     except sr.UnknownValueError:
         stl.warning("No se pudo entender el audio. Por favor, intenta de nuevo.")
@@ -97,7 +97,7 @@ def main():
             if texto_es:
                 stl.success(f"Texto capturado: {texto_es}")
                 
-                with stl.spinnner("Traduciendo..."):
+                with stl.spinner("Traduciendo..."):
                    texto_fr = traducir_texto(texto_es)
                 
                 if texto_fr:
