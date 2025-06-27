@@ -1,7 +1,9 @@
-streamlit 
-sounddevice 
-soundfile 
-gTTS 
-SpeechRecognition
-transformers 
+
+streamlit
+sounddevice
+soundfile
+speechrecognition
+transformers
 torch
+sentencepiece
+gTTS
